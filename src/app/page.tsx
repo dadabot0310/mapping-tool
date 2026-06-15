@@ -6,6 +6,7 @@ import {
   Priority, PositionType, RecruitStatus, CompanyType, TalentQuality, HuntPriority,
   CandidateSource, CandidateStatus, MatchLevel, InterviewRound, InterviewResult,
   Suggestion, PositionTendency,
+  RecruitingDemand, CandidateApplication,
 } from "@/lib/types";
 import {
   getData, getIsLoading, getError, subscribe,
@@ -13,10 +14,12 @@ import {
   addCompany, updateCompany, deleteCompany,
   addCandidate, updateCandidate, deleteCandidate, calcTotalScore, calcLevel,
   addFeedback, updateFeedback, deleteFeedback,
+  getDemands, addDemand, updateDemand, deleteDemand,
+  getApplications, addApplication, updateApplication, deleteApplication,
 } from "@/lib/store";
 import { parseResume } from "@/lib/resumeParser";
 
-type Tab = "dashboard" | "positions" | "companies" | "candidates" | "kanban" | "report";
+type Tab = "dashboard" | "positions" | "companies" | "candidates" | "kanban" | "report" | "demands" | "applications";
 
 // ---------- 通用组件 ----------
 
@@ -98,6 +101,8 @@ const tabs: { key: Tab; label: string; icon: string }[] = [
   { key: "positions", label: "岗位管理", icon: "📋" },
   { key: "companies", label: "目标公司", icon: "🏢" },
   { key: "candidates", label: "候选人库", icon: "👤" },
+  { key: "demands", label: "招聘需求", icon: "📝" },
+  { key: "applications", label: "候选人跟进", icon: "🔄" },
   { key: "kanban", label: "跟进看板", icon: "📌" },
   { key: "report", label: "Mapping报告", icon: "📄" },
 ];
@@ -107,6 +112,8 @@ const tabs: { key: Tab; label: string; icon: string }[] = [
 function Dashboard({ data }: { data: AppData }) {
   const positions = data.positions;
   const candidates = data.candidates;
+  const demands = data.demands;
+  const applications = data.applications;
   const p0 = positions.filter((p) => p.priority === "P0").length;
   const p1 = positions.filter((p) => p.priority === "P1").length;
   const p2 = positions.filter((p) => p.priority === "P2").length;
@@ -123,6 +130,8 @@ function Dashboard({ data }: { data: AppData }) {
         <StatCard label="候选人总数" value={candidates.length} sub={`A类: ${aCount}`} />
         <StatCard label="面试中" value={interviewing} />
         <StatCard label="Offer阶段" value={offerCount} sub={`风险岗位: ${riskPositions}`} />
+        <StatCard label="招聘需求" value={demands.length} />
+        <StatCard label="候选人跟进" value={applications.length} />
       </div>
 
       <div className="card">
@@ -766,6 +775,256 @@ function KanbanModule() {
   );
 }
 
+// ---------- 模块: 招聘需求 (Demands) ----------
+
+function DemandsModule() {
+  const [data, setData] = useState(getData());
+  const [showAdd, setShowAdd] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState<Partial<RecruitingDemand>>({});
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [demands, setDemands] = useState<RecruitingDemand[]>([]);
+  useEffect(() => { const refresh = () => { const d = getData(); setData(d); setDemands(d.demands); }; refresh(); return subscribe(refresh); }, []);
+
+  const resetForm = () => { setForm({}); setEditId(null); setShowAdd(false); };
+  const startEdit = (d: RecruitingDemand) => { setForm({ ...d }); setEditId(d.id); setShowAdd(true); };
+
+  const handleSave = async () => {
+    if (!form.department || !form.position) return alert("请填写部门、岗位");
+    if (editId) { await updateDemand(editId, form); } else { await addDemand(form as any); }
+    resetForm();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold">招聘需求</h2>
+        <button className="btn-primary btn-sm" onClick={() => { resetForm(); setShowAdd(true); }}>+ 新增需求</button>
+      </div>
+
+      {showAdd && (
+        <div className="card mb-4">
+          <h3 className="font-semibold mb-3">{editId ? "编辑需求" : "新增需求"}</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+            <div><label className="block text-xs text-gray-500 mb-1">日期</label><input className="input-field" value={form.date || ""} onChange={(e) => setForm({ ...form, date: e.target.value })} type="date" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">部门 *</label><input className="input-field" value={form.department || ""} onChange={(e) => setForm({ ...form, department: e.target.value })} placeholder="如: 产品部" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">岗位 *</label><input className="input-field" value={form.position || ""} onChange={(e) => setForm({ ...form, position: e.target.value })} placeholder="如: 高级产品经理" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">HR</label><input className="input-field" value={form.hr || ""} onChange={(e) => setForm({ ...form, hr: e.target.value })} placeholder="如: 张伟" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">紧急程度</label><select className="select-field" value={form.priority || "P1"} onChange={(e) => setForm({ ...form, priority: e.target.value })}><option value="P0">P0 紧急</option><option value="P1">P1 正常</option><option value="P2">P2 储备</option></select></div>
+            <div><label className="block text-xs text-gray-500 mb-1">目标公司</label><input className="input-field" value={form.targetCompany || ""} onChange={(e) => setForm({ ...form, targetCompany: e.target.value })} placeholder="如: 阿里巴巴" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">渠道</label><input className="input-field" value={form.channel || ""} onChange={(e) => setForm({ ...form, channel: e.target.value })} placeholder="如: Boss直聘/LinkedIn" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">备注</label><input className="input-field" value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
+          </div>
+          <div className="flex gap-2"><button className="btn-primary btn-sm" onClick={handleSave}>保存</button><button className="btn-secondary btn-sm" onClick={resetForm}>取消</button></div>
+        </div>
+      )}
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b text-left">{["日期","部门","岗位","HR","优先级","目标公司","渠道","备注"].map((h) => <th key={h} className="p-2 font-medium text-gray-500 whitespace-nowrap">{h}</th>)}<th className="p-2"></th></tr></thead>
+          <tbody>
+            {demands.map((d) => (
+              <tr key={d.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => startEdit(d)}>
+                <td className="p-2 whitespace-nowrap">{d.date ? d.date.slice(0, 10) : "-"}</td>
+                <td className="p-2">{d.department}</td>
+                <td className="p-2 font-medium">{d.position}</td>
+                <td className="p-2">{d.hr || "-"}</td>
+                <td className="p-2"><span className={`tag ${d.priority === "P0" ? "bg-red-100 text-red-700" : d.priority === "P2" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>{d.priority || "P1"}</span></td>
+                <td className="p-2">{d.targetCompany || "-"}</td>
+                <td className="p-2">{d.channel || "-"}</td>
+                <td className="p-2 text-gray-400 max-w-[200px] truncate">{d.notes || "-"}</td>
+                <td className="p-2"><button className="text-red-400 hover:text-red-600 text-xs" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(d.id); }}>删除</button></td>
+              </tr>
+            ))}
+            {demands.length === 0 && <tr><td colSpan={9} className="p-8 text-center text-gray-400">暂无招聘需求，点击"新增需求"开始</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <ConfirmDialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} onConfirm={() => { if (deleteConfirm) { deleteDemand(deleteConfirm); setDeleteConfirm(null); } }} title="删除招聘需求" message="确认删除？" />
+    </div>
+  );
+}
+
+// ---------- 模块: 候选人跟进 (Applications) ----------
+
+function AppTag({ label }: { label: string }) {
+  if (!label) return <span className="text-gray-300">-</span>;
+  const green = ["通过", "已发Offer", "已接受", "已入职"];
+  const red = ["淘汰", "不通过", "放弃"];
+  const yellow = ["待定", "待安排", "进行中", "等待中"];
+  const blue = ["offer中", "背调中"];
+  const cls = green.some((k) => label.includes(k)) ? "bg-green-100 text-green-700" :
+    red.some((k) => label.includes(k)) ? "bg-red-100 text-red-700" :
+    yellow.some((k) => label.includes(k)) ? "bg-yellow-100 text-yellow-700" :
+    blue.some((k) => label.includes(k)) ? "bg-blue-100 text-blue-700" :
+    "bg-gray-100 text-gray-600";
+  return <span className={`tag ${cls}`}>{label}</span>;
+}
+
+function ApplicationsModule() {
+  const [data, setData] = useState(getData());
+  const [showAdd, setShowAdd] = useState(false);
+  const [detailApp, setDetailApp] = useState<CandidateApplication | null>(null);
+  const [editForm, setEditForm] = useState<Partial<CandidateApplication>>({});
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [filterDept, setFilterDept] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [applications, setApplications] = useState<CandidateApplication[]>([]);
+  useEffect(() => { const refresh = () => { const d = getData(); setData(d); setApplications(d.applications); }; refresh(); return subscribe(refresh); }, []);
+
+  const getDemandInfo = (demandId: string) => data.demands.find((d) => d.id === demandId);
+
+  const initAdd = () => { setEditForm({}); setShowAdd(true); };
+
+  const handleSave = async () => {
+    if (!editForm.candidateName || !editForm.demandId) return alert("请选择招聘需求并填写候选人姓名");
+    if (editForm.id) { await updateApplication(editForm.id, editForm); } else { await addApplication(editForm as any); }
+    setShowAdd(false); setEditForm({}); setDetailApp(null);
+  };
+
+  const openDetail = (a: CandidateApplication) => { setDetailApp(a); setEditForm({ ...a }); };
+
+  const filtered = applications.filter((a) => {
+    const demand = getDemandInfo(a.demandId);
+    if (filterDept && demand && !demand.department.includes(filterDept)) return false;
+    if (filterStatus) {
+      const hasStatus = [a.firstInterviewResult, a.secondInterviewResult, a.thirdInterviewResult, a.offerStatus, a.onboardingStatus].some((s) => s && s.includes(filterStatus));
+      if (!hasStatus) return false;
+    }
+    return true;
+  });
+
+  const departments = Array.from(new Set(applications.map((a) => getDemandInfo(a.demandId)?.department).filter(Boolean))) as string[];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold">候选人跟进</h2>
+        <button className="btn-primary btn-sm" onClick={initAdd}>+ 新增跟进记录</button>
+      </div>
+
+      <div className="flex gap-3 mb-4 flex-wrap">
+        <select className="select-field w-40" value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
+          <option value="">全部部门</option>
+          {departments.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <select className="select-field w-40" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+          <option value="">全部状态</option>
+          <option value="通过">通过</option>
+          <option value="待定">待定</option>
+          <option value="淘汰">淘汰</option>
+          <option value="已发Offer">已发Offer</option>
+          <option value="已入职">已入职</option>
+        </select>
+        <span className="text-sm text-gray-400 self-center ml-auto">共 {filtered.length} 条</span>
+      </div>
+
+      {(showAdd || detailApp) && (
+        <div className="card mb-4">
+          <h3 className="font-semibold mb-3">{editForm.id ? "编辑跟进记录" : "新增跟进记录"}</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+            <div><label className="block text-xs text-gray-500 mb-1">招聘需求 *</label>
+              <select className="select-field" value={editForm.demandId || ""} onChange={(e) => setEditForm({ ...editForm, demandId: e.target.value })}>
+                <option value="">请选择</option>
+                {data.demands.map((d) => <option key={d.id} value={d.id}>{d.department} - {d.position} ({d.hr})</option>)}
+              </select></div>
+            <div><label className="block text-xs text-gray-500 mb-1">候选人姓名 *</label><input className="input-field" value={editForm.candidateName || ""} onChange={(e) => setEditForm({ ...editForm, candidateName: e.target.value })} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">当前公司</label><input className="input-field" value={editForm.currentCompany || ""} onChange={(e) => setEditForm({ ...editForm, currentCompany: e.target.value })} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">当前职位</label><input className="input-field" value={editForm.currentPosition || ""} onChange={(e) => setEditForm({ ...editForm, currentPosition: e.target.value })} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">联系方式</label><input className="input-field" value={editForm.contact || ""} onChange={(e) => setEditForm({ ...editForm, contact: e.target.value })} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">来源渠道</label><input className="input-field" value={editForm.source || ""} onChange={(e) => setEditForm({ ...editForm, source: e.target.value })} placeholder="Boss/LinkedIn/内推" /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">简历链接</label><input className="input-field" value={editForm.resumeUrl || ""} onChange={(e) => setEditForm({ ...editForm, resumeUrl: e.target.value })} /></div>
+          </div>
+          <div className="border-t pt-3 mt-2">
+            <h4 className="text-sm font-medium mb-2 text-gray-600">面试流程</h4>
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="bg-gray-50 rounded p-2">
+                <div className="text-xs text-gray-400 mb-1">初试</div>
+                <input className="input-field mb-1 text-xs" placeholder="面试官" value={editForm.firstInterviewer || ""} onChange={(e) => setEditForm({ ...editForm, firstInterviewer: e.target.value })} />
+                <input className="input-field mb-1 text-xs" type="date" value={editForm.firstInterviewTime ? editForm.firstInterviewTime.slice(0, 10) : ""} onChange={(e) => setEditForm({ ...editForm, firstInterviewTime: e.target.value })} />
+                <select className="select-field text-xs" value={editForm.firstInterviewResult || ""} onChange={(e) => setEditForm({ ...editForm, firstInterviewResult: e.target.value })}>
+                  <option value="">待定</option><option value="通过">通过</option><option value="待定-二面">待定（二面）</option><option value="淘汰">淘汰</option>
+                </select>
+              </div>
+              <div className="bg-gray-50 rounded p-2">
+                <div className="text-xs text-gray-400 mb-1">复试</div>
+                <input className="input-field mb-1 text-xs" placeholder="面试官" value={editForm.secondInterviewer || ""} onChange={(e) => setEditForm({ ...editForm, secondInterviewer: e.target.value })} />
+                <input className="input-field mb-1 text-xs" type="date" value={editForm.secondInterviewTime ? editForm.secondInterviewTime.slice(0, 10) : ""} onChange={(e) => setEditForm({ ...editForm, secondInterviewTime: e.target.value })} />
+                <select className="select-field text-xs" value={editForm.secondInterviewResult || ""} onChange={(e) => setEditForm({ ...editForm, secondInterviewResult: e.target.value })}>
+                  <option value="">待定</option><option value="通过">通过</option><option value="淘汰">淘汰</option>
+                </select>
+              </div>
+              <div className="bg-gray-50 rounded p-2">
+                <div className="text-xs text-gray-400 mb-1">终试</div>
+                <input className="input-field mb-1 text-xs" placeholder="面试官" value={editForm.thirdInterviewer || ""} onChange={(e) => setEditForm({ ...editForm, thirdInterviewer: e.target.value })} />
+                <input className="input-field mb-1 text-xs" type="date" value={editForm.thirdInterviewTime ? editForm.thirdInterviewTime.slice(0, 10) : ""} onChange={(e) => setEditForm({ ...editForm, thirdInterviewTime: e.target.value })} />
+                <select className="select-field text-xs" value={editForm.thirdInterviewResult || ""} onChange={(e) => setEditForm({ ...editForm, thirdInterviewResult: e.target.value })}>
+                  <option value="">待定</option><option value="通过">通过</option><option value="淘汰">淘汰</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            <div><label className="block text-xs text-gray-500 mb-1">Offer状态</label>
+              <select className="select-field" value={editForm.offerStatus || ""} onChange={(e) => setEditForm({ ...editForm, offerStatus: e.target.value })}>
+                <option value="">-</option><option value="已发Offer">已发Offer</option><option value="背调中">背调中</option><option value="已接受">已接受</option><option value="放弃">放弃</option>
+              </select></div>
+            <div><label className="block text-xs text-gray-500 mb-1">Offer日期</label><input className="input-field" type="date" value={editForm.offerDate ? editForm.offerDate.slice(0, 10) : ""} onChange={(e) => setEditForm({ ...editForm, offerDate: e.target.value })} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">入职状态</label>
+              <select className="select-field" value={editForm.onboardingStatus || ""} onChange={(e) => setEditForm({ ...editForm, onboardingStatus: e.target.value })}>
+                <option value="">-</option><option value="已入职">已入职</option><option value="等待中">等待中</option><option value="放弃入职">放弃入职</option>
+              </select></div>
+            <div><label className="block text-xs text-gray-500 mb-1">入职日期</label><input className="input-field" type="date" value={editForm.onboardingDate ? editForm.onboardingDate.slice(0, 10) : ""} onChange={(e) => setEditForm({ ...editForm, onboardingDate: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <div><label className="block text-xs text-gray-500 mb-1">备注1</label><input className="input-field" value={editForm.remarks || ""} onChange={(e) => setEditForm({ ...editForm, remarks: e.target.value })} /></div>
+            <div><label className="block text-xs text-gray-500 mb-1">备注2</label><input className="input-field" value={editForm.notes || ""} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></div>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button className="btn-primary btn-sm" onClick={handleSave}>{editForm.id ? "更新" : "保存"}</button>
+            <button className="btn-secondary btn-sm" onClick={() => { setShowAdd(false); setDetailApp(null); setEditForm({}); }}>取消</button>
+          </div>
+        </div>
+      )}
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b text-left">
+            {["需求","候选人","当前公司","初试","复试","终试","Offer","入职"].map((h) => <th key={h} className="p-2 font-medium text-gray-500 whitespace-nowrap">{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {filtered.map((a) => {
+              const d = getDemandInfo(a.demandId);
+              return (
+                <tr key={a.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => openDetail(a)}>
+                  <td className="p-2 whitespace-nowrap">
+                    <div className="font-medium text-xs">{d?.position || "-"}</div>
+                    <div className="text-xs text-gray-400">{d?.department || "-"} · {d?.hr || "-"}</div>
+                  </td>
+                  <td className="p-2">
+                    <div className="font-medium">{a.candidateName}</div>
+                    {a.currentCompany && <div className="text-xs text-gray-400">{a.currentCompany} · {a.currentPosition}</div>}
+                  </td>
+                  <td className="p-2 text-gray-500 text-xs">{a.currentCompany || "-"}</td>
+                  <td className="p-2"><AppTag label={a.firstInterviewResult} /></td>
+                  <td className="p-2"><AppTag label={a.secondInterviewResult} /></td>
+                  <td className="p-2"><AppTag label={a.thirdInterviewResult} /></td>
+                  <td className="p-2"><AppTag label={a.offerStatus} /></td>
+                  <td className="p-2"><AppTag label={a.onboardingStatus} /></td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-gray-400">暂无候选人跟进记录，请先添加招聘需求，再新增跟进记录</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <ConfirmDialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} onConfirm={() => { if (deleteConfirm) { deleteApplication(deleteConfirm); setDeleteConfirm(null); setDetailApp(null); } }} title="删除跟进记录" message="确认删除此候选人跟进记录？" />
+    </div>
+  );
+}
+
 // ---------- 模块: Mapping报告 ----------
 
 type ReportDimension = "position" | "company";
@@ -1039,6 +1298,8 @@ export default function Home() {
         {tab === "positions" && <PositionsModule />}
         {tab === "companies" && <CompaniesModule />}
         {tab === "candidates" && <CandidatesModule />}
+        {tab === "demands" && <DemandsModule />}
+        {tab === "applications" && <ApplicationsModule />}
         {tab === "kanban" && <KanbanModule />}
         {tab === "report" && <ReportModule />}
       </main>

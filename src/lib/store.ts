@@ -1,4 +1,4 @@
-import { AppData, Position, TargetCompany, Candidate, InterviewFeedback } from "./types";
+import { AppData, Position, TargetCompany, Candidate, InterviewFeedback, RecruitingDemand, CandidateApplication } from "./types";
 import { samplePositions, sampleCompanies, sampleCandidates, sampleFeedbacks } from "./sampleData";
 import { supabase, isSupabaseConfigured } from "./supabase";
 
@@ -10,6 +10,8 @@ let data: AppData = {
   companies: sampleCompanies,
   candidates: sampleCandidates,
   feedbacks: sampleFeedbacks,
+  demands: [],
+  applications: [],
 };
 let isLoading = true;
 let error: string | null = null;
@@ -181,6 +183,80 @@ function fromFeedback(f: InterviewFeedback): Record<string, unknown> {
   };
 }
 
+// ===== v2 转换函数 =====
+
+function toDemand(row: Record<string, unknown>): RecruitingDemand {
+  return {
+    id: row.id as string,
+    date: row.date as string || "",
+    department: row.department as string,
+    position: row.position as string,
+    hr: row.hr as string || "",
+    priority: row.priority as string || "P1",
+    targetCompany: row.target_company as string || "",
+    channel: row.channel as string || "",
+    notes: row.notes as string || "",
+    createdAt: row.created_at as string || "",
+    updatedAt: row.updated_at as string || "",
+  };
+}
+
+function fromDemand(d: RecruitingDemand): Record<string, unknown> {
+  return {
+    id: d.id, date: d.date, department: d.department, position: d.position,
+    hr: d.hr, priority: d.priority, target_company: d.targetCompany,
+    channel: d.channel, notes: d.notes, created_at: d.createdAt, updated_at: d.updatedAt,
+  };
+}
+
+function toApplication(row: Record<string, unknown>): CandidateApplication {
+  return {
+    id: row.id as string,
+    demandId: row.demand_id as string || "",
+    candidateName: row.candidate_name as string,
+    currentCompany: row.current_company as string || "",
+    currentPosition: row.current_position as string || "",
+    contact: row.contact as string || "",
+    source: row.source as string || "",
+    resumeUrl: row.resume_url as string || "",
+    firstInterviewer: row.first_interviewer as string || "",
+    firstInterviewTime: row.first_interview_time as string || "",
+    firstInterviewResult: row.first_interview_result as string || "",
+    secondInterviewer: row.second_interviewer as string || "",
+    secondInterviewTime: row.second_interview_time as string || "",
+    secondInterviewResult: row.second_interview_result as string || "",
+    thirdInterviewer: row.third_interviewer as string || "",
+    thirdInterviewTime: row.third_interview_time as string || "",
+    thirdInterviewResult: row.third_interview_result as string || "",
+    offerStatus: row.offer_status as string || "",
+    offerDate: row.offer_date as string || "",
+    onboardingStatus: row.onboarding_status as string || "",
+    onboardingDate: row.onboarding_date as string || "",
+    remarks: row.remarks as string || "",
+    notes: row.notes as string || "",
+    createdAt: row.created_at as string || "",
+    updatedAt: row.updated_at as string || "",
+  };
+}
+
+function fromApplication(a: CandidateApplication): Record<string, unknown> {
+  return {
+    id: a.id, demand_id: a.demandId, candidate_name: a.candidateName,
+    current_company: a.currentCompany, current_position: a.currentPosition,
+    contact: a.contact, source: a.source, resume_url: a.resumeUrl,
+    first_interviewer: a.firstInterviewer, first_interview_time: a.firstInterviewTime,
+    first_interview_result: a.firstInterviewResult,
+    second_interviewer: a.secondInterviewer, second_interview_time: a.secondInterviewTime,
+    second_interview_result: a.secondInterviewResult,
+    third_interviewer: a.thirdInterviewer, third_interview_time: a.thirdInterviewTime,
+    third_interview_result: a.thirdInterviewResult,
+    offer_status: a.offerStatus, offer_date: a.offerDate,
+    onboarding_status: a.onboardingStatus, onboarding_date: a.onboardingDate,
+    remarks: a.remarks, notes: a.notes,
+    created_at: a.createdAt, updated_at: a.updatedAt,
+  };
+}
+
 // ============================================================
 // 数据加载
 // ============================================================
@@ -209,11 +285,13 @@ export async function loadData(): Promise<void> {
   }
 
   try {
-    const [posRes, compRes, candRes, fbRes] = await Promise.all([
+    const [posRes, compRes, candRes, fbRes, demRes, appRes] = await Promise.all([
       supabase.from("positions").select("*").order("created_at", { ascending: false }),
       supabase.from("companies").select("*").order("created_at", { ascending: false }),
       supabase.from("candidates").select("*").order("created_at", { ascending: false }),
       supabase.from("feedbacks").select("*").order("created_at", { ascending: false }),
+      supabase.from("recruiting_demands").select("*").order("created_at", { ascending: false }),
+      supabase.from("candidate_applications").select("*").order("created_at", { ascending: false }),
     ]);
 
     if (posRes.error) throw posRes.error;
@@ -226,6 +304,8 @@ export async function loadData(): Promise<void> {
       companies: (compRes.data || []).map(toCompany),
       candidates: (candRes.data || []).map(toCandidate),
       feedbacks: (fbRes.data || []).map(toFeedback),
+      demands: demRes.error ? [] : (demRes.data || []).map(toDemand),
+      applications: appRes.error ? [] : (appRes.data || []).map(toApplication),
     };
     persist();
   } catch (e: unknown) {
@@ -498,6 +578,114 @@ export async function deleteFeedback(id: string) {
     } catch (e) {
       if (existed) data.feedbacks.push(existed);
       console.error("[store] deleteFeedback sync error:", e);
+    }
+  }
+}
+
+// ---- Demands (v2) ----
+
+export function getDemands(): RecruitingDemand[] { return data.demands; }
+
+export async function addDemand(d: Omit<RecruitingDemand, "id" | "createdAt" | "updatedAt">): Promise<RecruitingDemand> {
+  const now = new Date().toISOString();
+  const nd: RecruitingDemand = { ...d, id: genId(), createdAt: now, updatedAt: now };
+  data.demands.push(nd);
+  persist();
+  notify();
+
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase.from("recruiting_demands").insert(fromDemand(nd)).select().single();
+    } catch (e) {
+      console.error("[store] addDemand sync error:", e);
+    }
+  }
+  return nd;
+}
+
+export async function updateDemand(id: string, updates: Partial<RecruitingDemand>) {
+  const idx = data.demands.findIndex((d) => d.id === id);
+  if (idx < 0) return;
+  const updated = { ...data.demands[idx], ...updates, updatedAt: new Date().toISOString() };
+  data.demands[idx] = updated;
+  persist();
+  notify();
+
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase.from("recruiting_demands").update(fromDemand(updated)).eq("id", id);
+    } catch (e) {
+      console.error("[store] updateDemand sync error:", e);
+    }
+  }
+}
+
+export async function deleteDemand(id: string) {
+  const existed = data.demands.find((d) => d.id === id);
+  data.demands = data.demands.filter((d) => d.id !== id);
+  persist();
+  notify();
+
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase.from("recruiting_demands").delete().eq("id", id);
+    } catch (e) {
+      if (existed) data.demands.push(existed);
+      console.error("[store] deleteDemand sync error:", e);
+    }
+  }
+}
+
+// ---- Applications (v2) ----
+
+export function getApplications(): CandidateApplication[] { return data.applications; }
+
+export async function addApplication(a: Omit<CandidateApplication, "id" | "createdAt" | "updatedAt">): Promise<CandidateApplication> {
+  const now = new Date().toISOString();
+  const na: CandidateApplication = { ...a, id: genId(), createdAt: now, updatedAt: now };
+  data.applications.push(na);
+  persist();
+  notify();
+
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase.from("candidate_applications").insert(fromApplication(na)).select().single();
+    } catch (e) {
+      console.error("[store] addApplication sync error:", e);
+    }
+  }
+  return na;
+}
+
+export async function updateApplication(id: string, updates: Partial<CandidateApplication>) {
+  const idx = data.applications.findIndex((a) => a.id === id);
+  if (idx < 0) return;
+  const updated = { ...data.applications[idx], ...updates, updatedAt: new Date().toISOString() };
+  data.applications[idx] = updated;
+  persist();
+  notify();
+
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase.from("candidate_applications").update(fromApplication(updated)).eq("id", id);
+    } catch (e) {
+      console.error("[store] updateApplication sync error:", e);
+    }
+  }
+}
+
+export async function deleteApplication(id: string) {
+  const existed = data.applications.find((a) => a.id === id);
+  data.applications = data.applications.filter((a) => a.id !== id);
+  persist();
+  notify();
+
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase.from("candidate_applications").delete().eq("id", id);
+    } catch (e) {
+      if (existed) data.applications.push(existed);
+      console.error("[store] deleteApplication sync error:", e);
     }
   }
 }

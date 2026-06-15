@@ -15,6 +15,8 @@ export type Suggestion = "管理岗" | "专家岗" | "中级岗位" | "高级岗
 export type MarketSupply = "充足" | "一般" | "稀缺";
 export type PositionTendency = "管理岗" | "专家岗" | "一线高产" | "可培养" | "长期关注";
 
+// ===== v1 保留类型 =====
+
 export interface Position {
   id: string;
   name: string;
@@ -110,6 +112,57 @@ export interface InterviewFeedback {
   createdAt: string;
 }
 
+// ===== v2 新增类型 =====
+
+export interface RecruitingDemand {
+  id: string;
+  date: string;
+  department: string;
+  position: string;
+  hr: string;
+  priority: string;  // P0/P1/P2/紧急/正常
+  targetCompany: string;
+  channel: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CandidateApplication {
+  id: string;
+  demandId: string;
+  candidateName: string;
+  currentCompany: string;
+  currentPosition: string;
+  contact: string;
+  source: string;
+  resumeUrl: string;
+  // 初试
+  firstInterviewer: string;
+  firstInterviewTime: string;
+  firstInterviewResult: string;
+  // 复试
+  secondInterviewer: string;
+  secondInterviewTime: string;
+  secondInterviewResult: string;
+  // 终试
+  thirdInterviewer: string;
+  thirdInterviewTime: string;
+  thirdInterviewResult: string;
+  // Offer & 入职
+  offerStatus: string;
+  offerDate: string;
+  onboardingStatus: string;
+  onboardingDate: string;
+  // 备注
+  remarks: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ===== v1 保留类型 =====
+
 export interface MappingReport {
   positionId: string;
   positionName: string;
@@ -137,4 +190,6 @@ export interface AppData {
   companies: TargetCompany[];
   candidates: Candidate[];
   feedbacks: InterviewFeedback[];
+  demands: RecruitingDemand[];
+  applications: CandidateApplication[];
 }
