@@ -173,3 +173,10 @@ CREATE POLICY "Allow all delete" ON positions FOR DELETE USING (true);
 CREATE POLICY "Allow all delete" ON companies FOR DELETE USING (true);
 CREATE POLICY "Allow all delete" ON candidates FOR DELETE USING (true);
 CREATE POLICY "Allow all delete" ON feedbacks FOR DELETE USING (true);
+
+-- -----------------------------------------------------------
+-- 授予 anon 和 authenticated 角色表级权限（RLS 生效的必要前提）
+-- -----------------------------------------------------------
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;

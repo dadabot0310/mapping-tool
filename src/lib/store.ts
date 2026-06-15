@@ -229,8 +229,15 @@ export async function loadData(): Promise<void> {
     };
     persist();
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    error = `加载云端数据失败: ${msg}`;
+    // PostgrestError 不继承 Error，需从自有属性提取
+    const err = e as Record<string, unknown> | null;
+    const msg =
+      (typeof err?.message === "string" ? err.message : "") ||
+      (typeof err?.details === "string" ? err.details : "") ||
+      JSON.stringify(err) ||
+      String(e);
+    const code = typeof err?.code === "string" ? ` [${err.code}]` : "";
+    error = `加载云端数据失败: ${msg}${code}`;
     console.error("[store] loadData error:", e);
     // 保留 localStorage 缓存数据，不清空
   }
